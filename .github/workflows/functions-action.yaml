@@ -1,0 +1,46 @@
+name: Deploy Python project to Azure Function App
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+env:
+  AZURE_FUNCTIONAPP_NAME: 'odictoy'   # set this to your function app name on Azure
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'       # set this to the path to your function app project, defaults to the repository root
+  PYTHON_VERSION: '3.10'                     # set this to the python version to use (e.g. '3.6', '3.7', '3.8')
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    steps:
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@v3
+
+    - name: Setup Python ${{ env.PYTHON_VERSION }} Environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: 'Resolve Project Dependencies Using Pip'
+      shell: bash
+      run: |
+        pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt --target=".python_packages/lib/site-packages"
+        popd
+
+    - name: 'Run Azure Functions Action Develop'
+      uses: Azure/functions-action@v1
+      id: fa-develop
+      with:
+        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}-${{ github.ref_name == 'main' && 'prod' || github.ref_name == 'develop' && 'dev' || github.ref_name == 'dev' && 'dev' }}
+        package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        sku: flexconsumption
+        remote-build: true
+# The SCM_DO_BUILD_DURING_DEPLOYMENT variable must not exist in the app settings or be set to false
+#        scm-do-build-during-deployment: true
+#        enable-oryx-build: true
