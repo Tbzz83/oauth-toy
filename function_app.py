@@ -25,3 +25,19 @@ def HttpExample(req: func.HttpRequest) -> func.HttpResponse:
              "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.",
              status_code=200
         )
+
+@app.route(route="home", auth_level=func.AuthLevel.ANONYMOUS)
+def home(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info('Home function triggered')
+    return func.HttpResponse(
+         "Home page",
+         status_code=200
+    )
+
+@app.route(route="auth-response", auth_level=func.AuthLevel.ANONYMOUS)
+def auth_response(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info('Auth response function triggered')
+    return func.HttpResponse(
+         "Home page",
+         status_code=200
+    )
