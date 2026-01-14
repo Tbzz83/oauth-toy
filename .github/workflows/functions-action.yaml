@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - dev
 
 env:
   AZURE_FUNCTIONAPP_NAME: 'odictoy'   # set this to your function app name on Azure
