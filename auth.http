@@ -1,0 +1,7 @@
+### LOGIN
+POST http://localhost:7071
+    /api
+    /login
+Content-type: application/json
+###
+
