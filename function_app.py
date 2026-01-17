@@ -92,8 +92,18 @@ def logout(req: func.HttpRequest) -> func.HttpResponse:
 def home(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Home function triggered')
     print(req.headers)
-    return func.HttpResponse(
-         "Home page",
+    return func.HttpResponse("""
+Home page
+
+Routes:
+/api/login - acquire id_token and session initialization
+/api/logout
+/api/session - displays users current session_data
+/api/sessions - displays all sessions data
+/api/token - acquire an access_token
+/api/auth-response - callback_uri
+
+        """,
          status_code=200
     )
 
@@ -101,9 +111,14 @@ def home(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="session", auth_level=func.AuthLevel.FUNCTION)
 @auth()
 def get_user_session_data(req: func.HttpRequest) -> func.HttpResponse:
+
+    data = {
+        "session_id" : req.session_id,
+        "session_data": req.session_data,
+    }
     # We're providing this from auth
     return func.HttpResponse(
-         f"{req.session_data}",
+         f"{data}",
          status_code=200
     )
 
@@ -203,7 +218,6 @@ def auth_response(req: func.HttpRequest) -> func.HttpResponse:
 
         # --- AUTHZ CODE
         if req.params:
-            response_message += "\nSuccessfully set authorization_code"
             authz_code = req.params.get('code')
             if authz_code:
                 authority_uri = os.getenv("AUTHORITY")
@@ -239,6 +253,7 @@ def auth_response(req: func.HttpRequest) -> func.HttpResponse:
 
                 access_token_json = resp.json()
                 set_new_access_token_session(req, access_token_json)
+                response_message += "\nSuccessfully set access_token"
                 #headers.append(("Set-Cookie", token_cookie_string))
         # ---
 
