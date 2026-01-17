@@ -7,6 +7,7 @@ resource "azuread_application_registration" "app" {
   description                        = "A toy project demonstrating OIDC and Oauth2.0 authn/authz"
   sign_in_audience                   = "AzureADMyOrg"
   implicit_id_token_issuance_enabled = true
+  implicit_access_token_issuance_enabled = true
   homepage_url                       = "https://${local.func_app_default_hostname}/api/home"
   #logout_url            = "https://app.example.com/logout"
   #marketing_url         = "https://example.com/"

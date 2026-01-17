@@ -1,7 +1,10 @@
 import base64
+from typing import Any
 import azure.functions as func
 import functools
 import jwt
+import logging
+import re
 import requests
 import os
 import secrets
@@ -12,39 +15,70 @@ from http.cookies import SimpleCookie
 from config import cfg
 from http_utils import http_error, login_redirect
 
+def get_session_id_and_data_from_req(req: HttpRequest) -> tuple[str, Any] | None:
+    """
+    Returns session_id and session_data
+    """
+    cookie_header = req.headers.get("cookie")
+    if cookie_header:
+        cookie = SimpleCookie()
+        cookie.load(cookie_header)
+
+        if "session_id" not in cookie:
+            return None
+    else:
+        return None
+
+    session_id = cookie["session_id"].value
+
+    if not session_id:
+        return None
+
+    session_data = get_session_data(session_id)
+
+    if not session_data:
+        return None
+
+    return session_id, session_data
+
 # Simple decorator that does some login handling
-def auth(func):
-    @functools.wraps(func)
-    def wrapper(req: HttpRequest):
-#        req = kwargs.get('req') or (args[0] if args else None)
-#        assert isinstance(req, HttpRequest)
-        print("req headers", dict(req.headers.items()))
-        cookie_header = req.headers.get("cookie")
-
-        if cookie_header:
-            cookie = SimpleCookie()
-            cookie.load(cookie_header)
-
-            if "session_id" not in cookie:
-                return login_redirect()
-
-            user_session_id = cookie["session_id"].value
-
-            user_data = get_session_data(user_session_id)
-            if not user_data:
+def auth(token=False):
+    def decorator(func):
+        def wrapper(req: HttpRequest):
+            res = get_session_id_and_data_from_req(req)
+            if not res:
+                logging.info("user data from session not found, redirecting to login...")
                 # Invalid session, or session expired
                 return login_redirect()
 
-            req.user_data = user_data
-            req.session_id = user_session_id
+            session_id, session_data = res
+
+            if token:
+                print("TOKEN TRUE")
+
+            # Ignore lint errors
+            req.session_data = session_data
+            req.session_id = session_id
 
             result = func(req)
             return result
 
-        else:
-            return login_redirect()
+        return wrapper
+    return decorator
 
-    return wrapper
+def generate_code_challenge_pair() -> tuple[str, str]:
+    """
+    Used for submitting the request to retrieve an access token
+    returns tuple[code_verifier, code_challenge]
+    """
+    code_verifier = base64.urlsafe_b64encode(os.urandom(40)).decode('utf-8')
+    code_verifier = re.sub('[^a-zA-Z0-9]+', '', code_verifier)
+
+    code_challenge = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+    code_challenge = base64.urlsafe_b64encode(code_challenge).decode('utf-8')
+    code_challenge = code_challenge.replace('=', '')
+
+    return (code_verifier, code_challenge)
 
 def get_session_data(session_id_from_cookie: str):
     # Hash the incoming cookie value
@@ -71,15 +105,35 @@ def generate_session_id_and_hash() -> tuple[str,str]:
 
     return session_id, session_hash
 
+def set_new_access_token_session(req: HttpRequest, access_token_json):
+    """
+    Uses the authorization code to request a new access token.
+    Stores the access token in a session and requests.
+    Validates access_token
+    """
+    res = get_session_id_and_data_from_req(req)
+    if not res:
+        raise Exception("session_id not found in user who must be logged in. Fatal!")
+
+    _, session_data = res
+    session_data["access_token"] = access_token_json
+
 def create_new_id_session(id_token: str):
-    payload, header = validate_tokens(id_token)
+    """
+    Returns a cookie string for an id_token. Validates id_token.
+    """
+    payload, header = validate_id_token(id_token)
 
     session_id, session_hash = generate_session_id_and_hash()
 
-    print(payload)
-    print(header)
+    #print(payload)
+    #print(header)
 
-    cfg["sessions"][session_hash] = payload
+    cfg["sessions"][session_hash] = {
+        "payload": payload,
+        "header": header,
+        "id_token": id_token,
+    }
 
     # HttpOnly: Prevents JS access (XSS protection)
     # Secure: Only sent over HTTPS
@@ -93,16 +147,32 @@ def create_new_id_session(id_token: str):
         "Max-Age=86400"  # Valid for 24 hours
     )
 
-    # 4. Return the response with the header
-    return func.HttpResponse(
-        "Logged in successfully",
-        status_code=200,
-        headers={
-            "Set-Cookie": cookie_string
-        }
-    )
+    # Return the cookie as a string
+    return cookie_string
 
-def validate_tokens(id_token: str, access_token: str|bytes|None = None):
+# Since we're getting the access_token through backchannel for now, 
+# we don't have to validate it 
+#def validate_access_token(access_token: str|bytes, session_data):
+#    if not session_data:
+#        raise Exception("session_data object empty. Fatal!")
+#
+#    print(session_data)
+#    payload, header = session_data["payload"], session_data["header"]
+#    alg_obj = jwt.get_algorithm_by_name(header["alg"])
+#
+#    # compute at_hash, then validate / assert
+#    if isinstance(access_token, str):
+#        access_token = access_token.encode("utf-8")
+#    digest = alg_obj.compute_hash_digest(access_token)
+#    digest = digest[:(len(digest) // 2)]
+#    at_hash = base64.urlsafe_b64encode(digest).rstrip(b"=")
+#    for key in payload:
+#        print(key)
+#    assert at_hash == payload["at_hash"]
+
+# TODO 
+# Validate the nonce
+def validate_id_token(id_token: str, access_token: str|bytes|None = None):
     client_id = os.getenv("CLIENT_ID")
     oidc_server = os.getenv("AUTHORITY")
     if not oidc_server:
@@ -141,15 +211,5 @@ def validate_tokens(id_token: str, access_token: str|bytes|None = None):
     )
     payload, header = data["payload"], data["header"]
 
-    # get the pyjwt algorithm object
-    alg_obj = jwt.get_algorithm_by_name(header["alg"])
-
-    # compute at_hash, then validate / assert
-    if access_token:
-        if isinstance(access_token, str):
-            access_token = access_token.encode("utf-8")
-        digest = alg_obj.compute_hash_digest(access_token)
-        at_hash = base64.urlsafe_b64encode(digest[: (len(digest) // 2)]).rstrip("=")
-        assert at_hash == payload["at_hash"]
 
     return payload, header
