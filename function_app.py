@@ -63,8 +63,8 @@ def login(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         return http_error(f"{e}")
 
-@auth()
 @app.route(route="logout", auth_level=func.AuthLevel.FUNCTION)
+@auth() # This isn't ideal, but works for now
 def logout(req: func.HttpRequest) -> func.HttpResponse:
     authority_uri = os.getenv("AUTHORITY")
     host = os.getenv("HOST")
@@ -97,8 +97,9 @@ def home(req: func.HttpRequest) -> func.HttpResponse:
          status_code=200
     )
 
-@auth
+
 @app.route(route="session", auth_level=func.AuthLevel.FUNCTION)
+@auth()
 def get_user_session_data(req: func.HttpRequest) -> func.HttpResponse:
     # We're providing this from auth
     return func.HttpResponse(
@@ -118,8 +119,9 @@ client_id=00001111-aaaa-2222-bbbb-3333cccc4444
 &code_challenge=YTFjNjI1OWYzMzA3MTI4ZDY2Njg5M2RkNmVjNDE5YmEyZGRhOGYyM2IzNjdmZWFhMTQ1ODg3NDcxY2Nl
 &code_challenge_method=S256
 """
-@auth
+
 @app.route(route="token", auth_level=func.AuthLevel.FUNCTION)
+@auth()
 def get_access_token(req: func.HttpRequest) -> func.HttpResponse:
     try:
         logging.info('Login function triggered')
@@ -165,7 +167,7 @@ def get_access_token(req: func.HttpRequest) -> func.HttpResponse:
         return http_error(str(e))
 
 @app.route(route="sessions", auth_level=func.AuthLevel.FUNCTION)
-@auth
+@auth()
 def get_sessions(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Get sessions function triggered')
 

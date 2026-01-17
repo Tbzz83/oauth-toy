@@ -13,11 +13,11 @@ import hashlib
 from azure.functions import HttpRequest,HttpResponse
 from http.cookies import SimpleCookie
 from config import cfg
-from http_utils import http_error, login_redirect
+from http_utils import http_error, login_redirect, token_redirect
 
 def get_session_id_and_data_from_req(req: HttpRequest) -> tuple[str, Any] | None:
     """
-    Returns session_id and session_data
+    Returns session_id and session_data respectively
     """
     cookie_header = req.headers.get("cookie")
     if cookie_header:
@@ -43,7 +43,21 @@ def get_session_id_and_data_from_req(req: HttpRequest) -> tuple[str, Any] | None
 
 # Simple decorator that does some login handling
 def auth(token=False):
+    """
+    Usage:
+    ```
+    @app.route(...)
+    @auth()
+    ```
+    A wrapper that by default will check if the user has
+    an active session. If the user does not have a session, 
+    they are redirected to `/api/login` and acquire an id_token session after
+    successful login. If `token=True` is provided, the user
+    (if logged in) will be redirected to acquire an access_token (`/api/token`), 
+    which will be stored in their current active session.
+    """
     def decorator(func):
+        @functools.wraps(func)
         def wrapper(req: HttpRequest):
             res = get_session_id_and_data_from_req(req)
             if not res:
@@ -53,16 +67,14 @@ def auth(token=False):
 
             session_id, session_data = res
 
-            if token:
-                print("TOKEN TRUE")
-
+            if token and "access_token" not in session_data:
+                return token_redirect()
+                
             # Ignore lint errors
             req.session_data = session_data
             req.session_id = session_id
 
-            result = func(req)
-            return result
-
+            return func(req)
         return wrapper
     return decorator
 
