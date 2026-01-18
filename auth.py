@@ -62,7 +62,6 @@ def auth(token=False):
             res = get_session_id_and_data_from_req(req)
             if not res:
                 logging.info("user data from session not found, redirecting to login...")
-                # Invalid session, or session expired
                 return login_redirect()
 
             session_id, session_data = res
@@ -70,6 +69,9 @@ def auth(token=False):
             if token and "access_token" not in session_data:
                 return token_redirect()
                 
+            # We are just going to attach some arbitrary data to the
+            # `request` object because Azure functions is very picky
+            # about function signatures
             # Ignore lint errors
             req.session_data = session_data
             req.session_id = session_id
@@ -119,9 +121,7 @@ def generate_session_id_and_hash() -> tuple[str,str]:
 
 def set_new_access_token_session(req: HttpRequest, access_token_json):
     """
-    Uses the authorization code to request a new access token.
-    Stores the access token in a session and requests.
-    Validates access_token
+    Sets the access_token data in the current active session
     """
     res = get_session_id_and_data_from_req(req)
     if not res:
@@ -132,7 +132,8 @@ def set_new_access_token_session(req: HttpRequest, access_token_json):
 
 def create_new_id_session(id_token: str):
     """
-    Returns a cookie string for an id_token. Validates id_token.
+    Returns a cookie string for an id_token. 
+    Validates id_token.
     """
     payload, header = validate_id_token(id_token)
 
@@ -185,6 +186,9 @@ def create_new_id_session(id_token: str):
 # TODO 
 # Validate the nonce
 def validate_id_token(id_token: str, access_token: str|bytes|None = None):
+    """
+    Validates an id_token using PyJWT and returns the header and payload.
+    """
     client_id = os.getenv("CLIENT_ID")
     oidc_server = os.getenv("AUTHORITY")
     if not oidc_server:

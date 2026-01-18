@@ -46,7 +46,6 @@ def people(req: func.HttpRequest) -> func.HttpResponse:
     )
     
     data = response.json()
-    print(data)
 
     for person in data['value']:
         response_message += f"{person}"
