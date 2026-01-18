@@ -3,6 +3,7 @@ from typing import Any
 import azure.functions as func
 import traceback
 import logging
+import base64
 import requests
 import dotenv
 import os
@@ -26,9 +27,41 @@ Oauth2.0 flow: https://learn.microsoft.com/en-us/entra/identity-platform/v2-oaut
 
 app = func.FunctionApp()
 dotenv.load_dotenv()
+access_token_scope = "https://graph.microsoft.com/People.Read"
+
+@app.route(route="people", auth_level=func.AuthLevel.FUNCTION, methods=["GET"])
+@auth(token=True)
+def people(req: func.HttpRequest) -> func.HttpResponse:
+
+    response_message = "People:\n"
+    access_token = req.session_data["access_token"]["access_token"]
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json" # Optional: specify desired response format
+    }
+
+    response = requests.get(
+        "https://graph.microsoft.com/v1.0/me/people",
+        headers=headers,
+    )
+    
+    data = response.json()
+    print(data)
+
+    for person in data['value']:
+        response_message += f"{person}"
+
+    return func.HttpResponse(
+        response_message, 
+        status_code=200,
+    )
 
 @app.route(route="login", auth_level=func.AuthLevel.FUNCTION, methods=["GET"])
 def login(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Logs the user in, storing their id_token in a session and 
+    return the session_id as an http only cookie to the client
+    """
     try:
         logging.info('Login function triggered')
         authority_uri = os.getenv("AUTHORITY")
@@ -92,7 +125,8 @@ def logout(req: func.HttpRequest) -> func.HttpResponse:
 def home(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Home function triggered')
     print(req.headers)
-    return func.HttpResponse("""
+    return func.HttpResponse(
+"""
 Home page
 
 Routes:
@@ -102,8 +136,9 @@ Routes:
 /api/sessions - displays all sessions data
 /api/token - acquire an access_token
 /api/auth-response - callback_uri
+/api/people - Lists people you work with
 
-        """,
+""",
          status_code=200
     )
 
@@ -129,7 +164,7 @@ client_id=00001111-aaaa-2222-bbbb-3333cccc4444
 &response_type=code
 &redirect_uri=http%3A%2F%2Flocalhost%2Fmyapp%2F
 &response_mode=query
-&scope=https%3A%2F%2Fgraph.microsoft.com%2Fmail.read
+&scope=https%3A%2F%2Fgraph.microsoft.com%2Fmail
 &state=12345
 &code_challenge=YTFjNjI1OWYzMzA3MTI4ZDY2Njg5M2RkNmVjNDE5YmEyZGRhOGYyM2IzNjdmZWFhMTQ1ODg3NDcxY2Nl
 &code_challenge_method=S256
@@ -162,7 +197,7 @@ def get_access_token(req: func.HttpRequest) -> func.HttpResponse:
             "response_type": "code",
             "redirect_uri": f"{host}/api/auth-response",
             "response_mode": "query",
-            "scope": "https://graph.microsoft.com/email",
+            "scope": access_token_scope,
             "state": "12345",  # In production, make this a random string
             "code_challenge": code_challenge, 
             "code_challenge_method": "S256"
@@ -198,7 +233,8 @@ def auth_response(req: func.HttpRequest) -> func.HttpResponse:
     try:
         
         data = {}
-        response_message = "Success!"
+        title = "Auth-Response:\n"
+        response_message = ""
         headers = []
 
         # --- ID TOKEN
@@ -239,7 +275,7 @@ def auth_response(req: func.HttpRequest) -> func.HttpResponse:
                     "client_id": client_id,
                     "grant_type": "authorization_code",
                     "redirect_uri": f"{host}/api/auth-response",
-                    "scope": "https://graph.microsoft.com/email",
+                    "scope": access_token_scope,
                     "client_secret": client_secret,
                     "code": authz_code,
                     "code_verifier": session_data["code_verifier"],
@@ -254,11 +290,14 @@ def auth_response(req: func.HttpRequest) -> func.HttpResponse:
                 access_token_json = resp.json()
                 set_new_access_token_session(req, access_token_json)
                 response_message += "\nSuccessfully set access_token"
-                #headers.append(("Set-Cookie", token_cookie_string))
         # ---
 
+        if not response_message:
+            response_message = f"No tokens have been delivered. Is the scope(s) {access_token_scope} correct?"
+
+        title += response_message
         response = func.HttpResponse(
-            response_message,
+            title,
             status_code=200,
         )
 
