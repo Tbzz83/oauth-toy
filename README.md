@@ -2,6 +2,13 @@
 
 This project is a minimal, educational OIDC implementation built as an **Azure Function App**. Its primary purpose is to decouple the OIDC/OAuth2 handshake steps, allowing you to observe how `id_tokens` and `access_tokens` are acquired and stored independently.
 
+### NOTE
+Since the id_token and access_token steps are decoupled, you will be redirected twice. This means for trying
+to access routes that require login and access_tokens (like `/api/people` or `/api/token`), each time you try
+to access the endpoint, you will be first redirected to login, then next time you try you'll be redirected to 
+acquire a token, *then* the next time you try it will work. This ain't perfect I admit, so apologies, but it's 
+educational!
+
 ---
 
 ## 🚀 Routes & Educational Flow
@@ -11,6 +18,10 @@ This project is a minimal, educational OIDC implementation built as an **Azure F
 * **`/api/home`**: The main dashboard. Lists all available routes and their purposes.
 * **`/api/session`**: Displays the data stored in **your** current active session (e.g., tokens, claims).
 * **`/api/sessions`**: A "god-mode" view that lists **all** active sessions currently stored by the app. Useful for debugging local state.
+
+*NOTE*
+sessions are just crudely stored in-memory for now, so if you are making changes to the 
+app, be sure to login again after changes.
 
 ### Authentication vs. Authorization
 
