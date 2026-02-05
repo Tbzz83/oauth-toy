@@ -25,8 +25,68 @@ app, be sure to login again after changes.
 
 ### Authentication vs. Authorization
 
-* **`/api/login`**: Intentionally requests **only an `id_token**`. This demonstrates the "Authentication" layer—proving who you are without necessarily gaining permission to call downstream APIs.
-* **`/api/token`**: Initiates the **Authorization Code Flow**. It redirects to Azure AD to request permissions, processes the callback, and saves the resulting `access_token` into your session.
+* **`/api/login`**: Intentionally requests **only an `id_token`**. This demonstrates the "Authentication" layer—proving who you are without necessarily gaining permission to call downstream APIs.
+* **`/api/token`**: Initiates the **Authorization Code Flow with PKCE**. It redirects to Azure AD to request permissions, processes the callback, and saves the resulting `access_token` into your session.
+
+---
+
+## Understanding the Authentication Flows
+
+This application intentionally separates authentication (identity) from authorization (access) for educational purposes. Here's how each flow works:
+
+### Flow Comparison
+
+| Aspect | `/api/login` (Authentication) | `/api/token` (Authorization) |
+|--------|-------------------------------|------------------------------|
+| **Purpose** | Prove user identity | Get permission to call APIs |
+| **Protocol** | OpenID Connect | OAuth 2.0 |
+| **Grant Type** | Implicit (`response_type=id_token`) | Authorization Code (`response_type=code`) |
+| **Token Received** | `id_token` | `access_token` |
+| **Delivery Method** | `form_post` (POST body) | Backchannel (server-to-server) |
+| **PKCE** | N/A (no code exchange) | Yes (`code_challenge` + `code_verifier`) |
+| **Client Secret** | Not used | Used in token exchange |
+
+### Why We Use Authorization Code + PKCE (Not Implicit) for Access Tokens
+
+You might wonder: *"Could we just use implicit flow to get an access token too?"*
+
+**Yes, technically we could.** Azure AD supports `response_type=token` or `response_type=id_token token` to return an access token via implicit flow, and we could even use `response_mode=form_post` to avoid putting it in the URL fragment.
+
+**But this is discouraged.** Here's why:
+
+1. **XSS Vulnerability**: Access tokens delivered to the browser (even via POST) end up in browser memory, making them vulnerable to cross-site scripting attacks.
+
+2. **No Client Authentication**: With implicit flow, anyone who intercepts the authorization request can complete it. There's no client secret or PKCE to prove the legitimate client is making the token request.
+
+3. **No Refresh Tokens**: Implicit flow cannot issue refresh tokens, meaning users must re-authenticate more frequently.
+
+4. **Formally Deprecated**: OAuth 2.1 (the upcoming standard) formally deprecates implicit flow for access tokens. See [Why Implicit Flow is Dead](https://blog.logto.io/implicit-flow-is-dead) for a detailed explanation.
+
+### What This Application Does Instead
+
+**For authentication (`/api/login`):**
+- Uses OIDC implicit flow to get an `id_token` only
+- The `id_token` is delivered via `form_post` (not URL fragment)
+- This is acceptable because the `id_token` only proves identity—it can't be used to call APIs
+
+**For authorization (`/api/token`):**
+- Uses Authorization Code flow with PKCE
+- The `code_challenge` is sent to Azure AD during authorization
+- The `code_verifier` is stored server-side and used during token exchange
+- A `client_secret` is also used (defense in depth for server-side apps)
+- The token exchange happens server-to-server—the access token is never exposed to the browser
+
+### Best Practices (OAuth 2.1)
+
+1. **Use Authorization Code + PKCE for all clients** - Even public clients (SPAs, mobile apps) should use auth code + PKCE, not implicit flow.
+
+2. **Confidential clients should use PKCE + client secret** - This provides defense in depth. Even if PKCE is compromised, the attacker still needs the client secret.
+
+3. **Keep tokens server-side when possible** - For server-rendered apps like this one, access tokens can stay on the server and never touch the browser.
+
+4. **Separate identity from access conceptually** - An `id_token` tells you WHO the user is. An `access_token` tells you WHAT they can do. This app demonstrates that separation explicitly.
+
+---
 
 ### Data Retrieval
 

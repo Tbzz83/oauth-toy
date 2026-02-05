@@ -16,13 +16,36 @@ from auth import auth, set_new_access_token_session, create_new_id_session, gene
 from config import cfg
 
 """
-It is possible to retrieve an ID token, authorization code, and 
-access token in one request. However, since this is a learning
-and demonstration project, these steps have been isolated to individual
-routes. For more information on best-practices, and production efficiencies, see:
+This application demonstrates two distinct authentication/authorization flows:
 
-OIDC flow: https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc
-Oauth2.0 flow: https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow
+1. OIDC AUTHENTICATION (/api/login):
+   - Uses implicit grant to obtain an id_token ONLY
+   - The id_token proves the user's identity (authentication)
+   - Delivered via form_post (not URL fragment) for security
+   - This is NOT the deprecated "implicit flow for access tokens"
+
+2. OAUTH AUTHORIZATION (/api/token):
+   - Uses Authorization Code flow with PKCE (Proof Key for Code Exchange)
+   - Obtains an access_token to call Microsoft Graph API
+   - PKCE protects against authorization code interception attacks
+   - Client secret is also used (defense in depth for confidential clients)
+   - Token exchange happens server-to-server (backchannel), never exposed to browser
+
+WHY NOT USE IMPLICIT FLOW FOR ACCESS TOKENS?
+Even though Azure AD supports returning access tokens via implicit flow 
+(response_type=token) with form_post delivery, this is discouraged because:
+- Access tokens in browser memory are vulnerable to XSS attacks
+- No client authentication possible on the token request
+- Refresh tokens cannot be issued
+- OAuth 2.1 formally deprecates implicit flow for access tokens
+
+These steps are intentionally separated for educational purposes. In production,
+you might combine them or use libraries like MSAL that handle this for you.
+
+For more information, see:
+- OIDC: https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc
+- OAuth 2.0 Auth Code: https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow
+- Why implicit is dead: https://blog.logto.io/implicit-flow-is-dead
 """
 
 app = func.FunctionApp()
