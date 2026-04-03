@@ -1,5 +1,6 @@
 from types import TracebackType
 from typing import Any
+from oauth_utils import *
 import azure.functions as func
 import traceback
 import logging
@@ -50,7 +51,7 @@ For more information, see:
 
 app = func.FunctionApp()
 dotenv.load_dotenv()
-access_token_scope = "https://graph.microsoft.com/People.Read"
+access_token_scope = "email"
 
 @app.route(route="people", auth_level=func.AuthLevel.FUNCTION, methods=["GET"])
 @auth(token=True)
@@ -93,7 +94,7 @@ def login(req: func.HttpRequest) -> func.HttpResponse:
         if not authority_uri or not client_id or not client_secret or not host:
             return http_error("`login error`, issue acquiring env vars")
 
-        endpoint = f"{authority_uri}/oauth2/v2.0/authorize"
+        endpoint = get_authorization_endpoint()
 
         params = {
             "client_id": client_id,
@@ -126,7 +127,7 @@ def logout(req: func.HttpRequest) -> func.HttpResponse:
     if not authority_uri or not host: 
         return http_error("issue acquiring env vars")
 
-    endpoint = f"{authority_uri}/oauth2/v2.0/logout"
+    endpoint = get_end_session_endpoint()
 
     params = {
         "post_logout_redirect_uri": f"{host}/api/home",
@@ -204,7 +205,7 @@ def get_access_token(req: func.HttpRequest) -> func.HttpResponse:
         if not authority_uri or not client_id or not client_secret or not host:
             return http_error("`login error`, issue acquiring env vars")
 
-        endpoint = f"{authority_uri}/oauth2/v2.0/authorize"
+        endpoint = get_authorization_endpoint()
 
         code_verifier, code_challenge = generate_code_challenge_pair()
         res = get_session_id_and_data_from_req(req)
@@ -265,8 +266,6 @@ def auth_response(req: func.HttpRequest) -> func.HttpResponse:
         except ValueError as _:
             pass
 
-        #print("DATA", data)
-
         id_token = data.get('id_token')
         if id_token:
             id_cookie_string = create_new_id_session(id_token[0])
@@ -285,7 +284,7 @@ def auth_response(req: func.HttpRequest) -> func.HttpResponse:
                 if not authority_uri or not client_id or not client_secret or not host:
                     return http_error("`login error`, issue acquiring env vars")
 
-                endpoint = f"{authority_uri}/oauth2/v2.0/token"
+                endpoint = get_token_endpoint()
 
                 res = get_session_id_and_data_from_req(req)
                 if not res:
@@ -316,6 +315,9 @@ def auth_response(req: func.HttpRequest) -> func.HttpResponse:
 
         if not response_message:
             response_message = f"No tokens have been delivered. Is the scope(s) {access_token_scope} correct?"
+            error_msg = data.get("error_description")
+            if error_msg: 
+                response_message += f"\n{error_msg}"
 
         title += response_message
         response = func.HttpResponse(
