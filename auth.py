@@ -63,19 +63,19 @@ def auth(token=False):
             if not res:
                 logging.info("user data from session not found, redirecting to login...")
                 return login_redirect()
-
-            session_id, session_data = res
-
-            if token and "access_token" not in session_data:
-                return token_redirect()
-                
-            # We are just going to attach some arbitrary data to the
-            # `request` object because Azure functions is very picky
-            # about function signatures
-            # Ignore lint errors
-            req.session_data = session_data
-            req.session_id = session_id
-
+#
+#            session_id, session_data = res
+#
+#            if token and "access_token" not in session_data:
+#                return token_redirect()
+#                
+#            # We are just going to attach some arbitrary data to the
+#            # `request` object because Azure functions is very picky
+#            # about function signatures
+#            # Ignore lint errors
+#            req.session_data = session_data
+#            req.session_id = session_id
+#
             return func(req)
         return wrapper
     return decorator
@@ -101,7 +101,7 @@ def get_session_data(session_id_from_cookie: str):
     # Look it up in your "database"
     session_data = cfg["sessions"].get(incoming_hash)
     
-    if not session_data:
+    if not session_data :
         return None # Session is invalid or expired
         
     return session_data
@@ -113,45 +113,37 @@ def revoke_session(session_id_from_cookie: str):
     del cfg["sessions"][incoming_hash]
 
 def generate_session_id_and_hash() -> tuple[str,str]:
+    """
+    Returns a new session_id, session_hash and initializes a new session
+    """
     session_id = secrets.token_urlsafe(32)
 
     session_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
 
     return session_id, session_hash
 
-def set_new_access_token_session(req: HttpRequest, access_token_json):
+def create_new_session() -> tuple[str, str]:
     """
-    Sets the access_token data in the current active session
+    Creates a new session. Returns the session_id and session_hash. 
+    Stores the session in the DB config using the session_hash as access key
     """
-    res = get_session_id_and_data_from_req(req)
-    if not res:
-        raise Exception("session_id not found in user who must be logged in. Fatal!")
-
-    _, session_data = res
-    session_data["access_token"] = access_token_json
-
-def create_new_id_session(id_token: str):
-    """
-    Returns a cookie string for an id_token. 
-    Validates id_token.
-    """
-    payload, header = validate_id_token(id_token)
 
     session_id, session_hash = generate_session_id_and_hash()
 
-    #print(payload)
-    #print(header)
-
+    # Add empty_data so `if not session_data` expressions are accurate, 
+    # and don't evaluate to true if the value for the key is just an empty dict, 
+    # which is technically valid and not None
     cfg["sessions"][session_hash] = {
-        "payload": payload,
-        "header": header,
-        "id_token": id_token,
+        "empty_data": None
     }
 
+    return session_id, session_hash
+
+def get_cookie_string(session_id: str) -> str:
     # HttpOnly: Prevents JS access (XSS protection)
     # Secure: Only sent over HTTPS
     # SameSite=Lax: Modern browser standard for CSRF protection
-    cookie_string = (
+    return (
         f"session_id={session_id}; "
         "Path=/; "
         "HttpOnly; "
@@ -159,9 +151,6 @@ def create_new_id_session(id_token: str):
         "SameSite=Lax; "
         "Max-Age=86400"  # Valid for 24 hours
     )
-
-    # Return the cookie as a string
-    return cookie_string
 
 # Since we're getting the access_token through backchannel for now, 
 # we don't have to validate it 
